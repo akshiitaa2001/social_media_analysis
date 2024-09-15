@@ -1,0 +1,208 @@
+---
+title: "Assignment10_SocialMedia"
+author: "Akshita"
+date: "2024-04-25"
+output: html_document
+---
+
+```{r}
+library(MASS)
+library(ggplot2)
+library(memisc)
+library(ROCR)
+
+social_media <- read.csv("C:/Users/HP/Downloads/Social_media_original.csv")
+str(social_media)
+social_media_cleaned <- social_media[,-1]
+
+#changing column names
+change_cols_index <- c(2,4,6,8,10,12,14,16,17,18,19,20,21,22,23,24)
+change_cols_name <- c("Instagram_Time", "Linkedin_Time", "Snapchat_Time", "Twitter_Time", "Whatsapp_Time", "Youtube_Time", "OTT_Time", "Reddit_Time", "Application Type", "Interview_call_received", "Networking", "Learning", "Mood_Productivity", "Morning_tireness", "Sleep_trouble", "Weekly_Feelings")
+colnames(social_media_cleaned)[change_cols_index] <- change_cols_name
+
+
+# Convert "NA", "N/A", "n/a", "na", "N.A", "n.a" to 0
+social_media_cleaned[social_media_cleaned == "NA" | social_media_cleaned == "N/A" | social_media_cleaned == "na" | social_media_cleaned == "n/a" | social_media_cleaned == "N.A" | social_media_cleaned == "n.a" | social_media_cleaned == "0" | social_media_cleaned == ""] <- NA
+social_media_cleaned[is.na(social_media_cleaned)] <- 0
+
+# Define a function to convert time strings to decimal hours
+convert_to_decimal_hours <- function(time_string) {
+# Check if NA values are present
+if (any(is.na(time_string))) {
+         return(rep(NA, length(time_string)))  # Return NA for NA values
+     }
+     
+# Define a function to convert HH:MM format to decimal hours
+     hhmm_to_decimal <- function(hhmm) {
+         parts <- as.numeric(strsplit(hhmm, ":")[[1]])  # Split into hours and minutes
+         hours <- parts[1]
+         minutes <- ifelse(length(parts) > 1, parts[2], 0)  # Handle missing minutes
+         total_hours <- hours + minutes / 60
+         return(total_hours)
+     }
+     
+# Convert time strings to decimal hours
+decimal_hours <- sapply(time_string, function(x) {
+         if (grepl("^\\d+:\\d+$", x)) {
+             return(hhmm_to_decimal(x))  # Convert HH:MM format
+         } else if (grepl("^\\d+\\.\\d+$", x)) {
+             return(as.numeric(x))  # Convert decimal format
+         } else if (grepl("^\\d+$", x)) {
+             return(as.numeric(x))  # Convert whole numbers
+         } else {
+             return(NA)  # Return NA for other cases
+         }
+     })
+     
+     return(decimal_hours)
+}
+
+time_columns <- c("Instagram_Time", "Linkedin_Time", "Snapchat_Time", "Twitter_Time", "Whatsapp_Time", "Youtube_Time", "OTT_Time", "Reddit_Time") 
+# Apply the conversion function to all time columns
+social_media_cleaned[time_columns] <- lapply(social_media_cleaned[time_columns], convert_to_decimal_hours)
+
+#Treating NA in whatsapp column
+mean_value <- mean(social_media_cleaned$Whatsapp_Time, na.rm = TRUE)
+social_media_cleaned$Whatsapp_Time[is.na(social_media_cleaned$Whatsapp_Time)] <- mean_value
+
+# Verify the result
+str(social_media_cleaned)
+
+# Convert 'No' and 'Yes' to 0 and 1 
+social_media_cleaned$Mood_Productivity <- ifelse(social_media_cleaned$Mood_Productivity == "No", 0, 1)
+
+social_media_cleaned$Morning_tireness <- ifelse(social_media_cleaned$Morning_tireness == "No", 0, 1)
+
+social_media_cleaned$Sleep_trouble <- ifelse(social_media_cleaned$Sleep_trouble == "No", 0, 1)
+
+# Select the relevant columns
+time_columns <- social_media_cleaned[, grepl("_Time", colnames(social_media_cleaned))]
+other_columns <- social_media_cleaned[c("Weekly_Feelings")]
+ 
+# Combine the columns
+combined_data <- cbind(time_columns, other_columns)
+
+# Create a binary outcome variable
+combined_data$Feelings_Category <- ifelse(combined_data$Weekly_Feelings > 3, "High", "Low")
+
+# Convert Feelings_Category to factor
+combined_data$Feelings_Category <- factor(combined_data$Feelings_Category, levels = c("Low", "High"))
+
+# Check the structure of the dataset
+str(combined_data)
+
+# Drop Weekly_Feelings variable using subset function
+combined_data <- subset(combined_data, select = -Weekly_Feelings)
+
+# See correlation
+#Extract independent variables
+independent_vars <- combined_data[, -ncol(combined_data)] # Exclude last column (dependent variable)
+correlation_matrix <- cor(independent_vars)
+print(correlation_matrix)
+ 
+# Create scatter plot matrix
+pairs(independent_vars, 
+       main = "Scatter Plot Matrix", pch = 19) # Set point shape
+
+#Based on relvent columns
+# Subset the combined_data dataset
+subset_data <- combined_data[, c("Instagram_Time", "Linkedin_Time", "Snapchat_Time", "Twitter_Time", "Whatsapp_Time", "Feelings_Category")]
+
+# Print the first few rows of the subsetted data to verify
+head(subset_data)
+str(subset_data)
+
+subset_data_independent <- as.matrix(subset_data[,c(1:5)])
+subset_data_raw <- cbind(subset_data_independent, as.numeric(as.factor(subset_data$Feelings_Category))-1)
+colnames(subset_data_raw)[6] <- "Feelings_Category"
+
+smp_size_raw <- floor(0.75 * nrow(subset_data_raw))
+train_ind_raw <- sample(nrow(subset_data_raw), size = smp_size_raw)
+train_raw.df <- as.data.frame(subset_data_raw[train_ind_raw, ])
+test_raw.df <- as.data.frame(subset_data_raw[-train_ind_raw, ])
+
+subset_data_raw.lda <- lda(formula = train_raw.df$Feelings_Category ~ ., data = train_raw.df)
+subset_data_raw.lda
+
+summary(subset_data_raw.lda)
+print(subset_data_raw.lda)
+plot(subset_data_raw.lda)
+
+subset_data_raw.lda.predict <- predict(subset_data_raw.lda, newdata = test_raw.df)
+subset_data_raw.lda.predict$class
+subset_data_raw.lda.predict$x
+
+# Get the posteriors as a dataframe.
+subset_data_raw.lda.predict.posteriors <- as.data.frame(subset_data_raw.lda.predict$posterior)
+
+pred <- prediction(subset_data_raw.lda.predict.posteriors[,2], test_raw.df$Feelings_Category)
+roc.perf = performance(pred, measure = "tpr", x.measure = "fpr")
+auc.train <- performance(pred, measure = "auc")
+auc.train <- auc.train@y.values
+plot(roc.perf)
+abline(a=0, b= 1)
+text(x = .25, y = .65 ,paste("AUC = ", round(auc.train[[1]],3), sep = ""))
+
+
+# do a quick plot to understand how good the model is
+plot(subset_data_raw.lda, col = as.integer(train_raw.df$Feelings_Category))
+# Sometime bell curves are better
+plot(subset_data_raw.lda, dimen = 1, type = "b")
+# THis plot shows the essense of LDA. It puts everything on a line and finds cutoffs. 
+# Partition plots
+#partimat(Species ~ Weigth + Sepal.Width + Length1 + Length2 + Length3 + Height + Width, data=train_raw.df_new, method="lda")
+
+# Lets focus on accuracy. Table function
+lda.train <- predict(subset_data_raw.lda)
+train_raw.df$lda <- lda.train$class
+table(train_raw.df$lda,train_raw.df$Feelings_Category)
+# running accuracy on the training set shows how good the model is. It is not an indication of "true" accuracy. We will use the test set to approximate accuracy
+lda.test <- predict(subset_data_raw.lda,test_raw.df)
+test_raw.df$lda <- lda.test$class
+table(test_raw.df$lda,test_raw.df$Feelings_Category)
+```
+
+Prior Probabilities:
+
+The prior probability of the Low feelings category is approximately 0.67, while for the High feelings category, it is about 0.33.
+
+This suggests that the Low feelings category is more prevalent in the training dataset, with about twice the occurrence compared to the High feelings category.
+
+Group Means:
+
+Comparing group means reveals differences in social media usage patterns between the Low and High feelings categories.
+
+Coefficients of Linear Discriminants:
+
+In this case:
+
+Instagram_Time, Whatsapp_Time and Linkedin_Time have positive coefficients, suggesting that higher usage times are associated with a higher likelihood of the High feelings category.
+
+Snapchat_Time, and Twitter_Time have negative coefficients, indicating that higher usage times are associated with a higher likelihood of the Low feelings category.
+
+Overall:
+
+These findings provide insights into how social media usage patterns may influence individuals' feelings categories, potentially informing strategies for improving well-being in social media usage.
+
+For prediction:
+
+We can see that, observation 17 has the highest LD value (2.87), indicating a stronger association with the High feelings category.Conversely, observation 18 has a negative LD value (-0.05), suggesting a stronger association with the Low feelings category.
+
+Observations with LD values farther from zero are likely to be more confidently classified into their respective feelings categories. For instance, observations 17 and 3, with LD values of 2.87 and 1.90 respectively, may be classified with higher confidence.
+
+Accuracy:
+
+Training Accuracy:
+
+The training accuracy can be calculated as the sum of correct predictions divided by the total number of observations in the training dataset.
+From the table, the training accuracy can be estimated as (9 + 2) / (9 + 3 + 1 + 2) ≈ 0.733, or approximately 73.3%.
+
+Test Accuracy:
+
+Similarly, the test accuracy can be calculated as the sum of correct predictions divided by the total number of observations in the test dataset.
+From the table, the test accuracy can be estimated as (2 + 2) / (2 + 1 + 1 + 2) ≈ 0.667, or approximately 66.7%.
+
+Comparison:
+
+The training accuracy is slightly higher than the test accuracy, which is expected since the model was trained on the training dataset.
+However, both accuracies are moderate, suggesting that the model may have some predictive power, but it may not generalize perfectly to unseen data.

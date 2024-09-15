@@ -1,0 +1,234 @@
+---
+title: "Assignment9_SocialMedia"
+author: "Akshita"
+date: "2024-04-18"
+output: html_document
+---
+
+```{r}
+social_media <- read.csv("C:/Users/HP/Downloads/Social_media_original.csv")
+str(social_media)
+social_media_cleaned <- social_media[,-1]
+
+#changing column names
+change_cols_index <- c(2,4,6,8,10,12,14,16,17,18,19,20,21,22,23,24)
+change_cols_name <- c("Instagram_Time", "Linkedin_Time", "Snapchat_Time", "Twitter_Time", "Whatsapp_Time", "Youtube_Time", "OTT_Time", "Reddit_Time", "Application Type", "Interview_call_received", "Networking", "Learning", "Mood_Productivity", "Morning_tireness", "Sleep_trouble", "Weekly_Feelings")
+colnames(social_media_cleaned)[change_cols_index] <- change_cols_name
+
+
+# Convert "NA", "N/A", "n/a", "na", "N.A", "n.a" to 0
+social_media_cleaned[social_media_cleaned == "NA" | social_media_cleaned == "N/A" | social_media_cleaned == "na" | social_media_cleaned == "n/a" | social_media_cleaned == "N.A" | social_media_cleaned == "n.a" | social_media_cleaned == "0" | social_media_cleaned == ""] <- NA
+social_media_cleaned[is.na(social_media_cleaned)] <- 0
+
+# Define a function to convert time strings to decimal hours
+convert_to_decimal_hours <- function(time_string) {
+# Check if NA values are present
+if (any(is.na(time_string))) {
+         return(rep(NA, length(time_string)))  # Return NA for NA values
+     }
+     
+# Define a function to convert HH:MM format to decimal hours
+     hhmm_to_decimal <- function(hhmm) {
+         parts <- as.numeric(strsplit(hhmm, ":")[[1]])  # Split into hours and minutes
+         hours <- parts[1]
+         minutes <- ifelse(length(parts) > 1, parts[2], 0)  # Handle missing minutes
+         total_hours <- hours + minutes / 60
+         return(total_hours)
+     }
+     
+# Convert time strings to decimal hours
+decimal_hours <- sapply(time_string, function(x) {
+         if (grepl("^\\d+:\\d+$", x)) {
+             return(hhmm_to_decimal(x))  # Convert HH:MM format
+         } else if (grepl("^\\d+\\.\\d+$", x)) {
+             return(as.numeric(x))  # Convert decimal format
+         } else if (grepl("^\\d+$", x)) {
+             return(as.numeric(x))  # Convert whole numbers
+         } else {
+             return(NA)  # Return NA for other cases
+         }
+     })
+     
+     return(decimal_hours)
+}
+
+time_columns <- c("Instagram_Time", "Linkedin_Time", "Snapchat_Time", "Twitter_Time", "Whatsapp_Time", "Youtube_Time", "OTT_Time", "Reddit_Time") 
+# Apply the conversion function to all time columns
+social_media_cleaned[time_columns] <- lapply(social_media_cleaned[time_columns], convert_to_decimal_hours)
+
+#Treating NA in whatsapp column
+mean_value <- mean(social_media_cleaned$Whatsapp_Time, na.rm = TRUE)
+social_media_cleaned$Whatsapp_Time[is.na(social_media_cleaned$Whatsapp_Time)] <- mean_value
+
+# Verify the result
+str(social_media_cleaned)
+
+# Convert 'No' and 'Yes' to 0 and 1 
+social_media_cleaned$Mood_Productivity <- ifelse(social_media_cleaned$Mood_Productivity == "No", 0, 1)
+
+social_media_cleaned$Morning_tireness <- ifelse(social_media_cleaned$Morning_tireness == "No", 0, 1)
+
+social_media_cleaned$Sleep_trouble <- ifelse(social_media_cleaned$Sleep_trouble == "No", 0, 1)
+
+# Select the relevant columns
+time_columns <- social_media_cleaned[, grepl("_Time", colnames(social_media_cleaned))]
+other_columns <- social_media_cleaned[c("Weekly_Feelings")]
+ 
+# Combine the columns
+combined_data <- cbind(time_columns, other_columns)
+# Compute the correlation matrix
+correlation_matrix <- cor(combined_data)
+# Print the correlation matrix
+print(correlation_matrix)
+```
+
+```{r}
+#1. Model development
+# Create a binary outcome variable
+combined_data$Feelings_Category <- ifelse(combined_data$Weekly_Feelings > 3, "High", "Low")
+
+# Convert Feelings_Category to factor
+combined_data$Feelings_Category <- factor(combined_data$Feelings_Category, levels = c("Low", "High"))
+
+# Check the structure of the dataset
+str(combined_data)
+
+# Drop Weekly_Feelings variable using subset function
+combined_data <- subset(combined_data, select = -Weekly_Feelings)
+
+# Fit logistic regression model
+logistic_model <- glm(Feelings_Category ~ ., data = combined_data, family = binomial)
+
+# Summary of the model
+summary(logistic_model)
+
+#2. Model Acceptance & 3. Residual Analysis:
+# Check p-values
+p_values <- summary(logistic_model)$coefficients[, 4]
+print(p_values)
+
+# Check AIC and BIC
+AIC_value <- AIC(logistic_model)
+print(AIC_value)
+BIC_value <- BIC(logistic_model)
+print(BIC_value)
+
+# Compare null deviance and residual deviance
+null_deviance <- summary(logistic_model)$null.deviance
+residual_deviance <- summary(logistic_model)$deviance
+deviance_reduction <- null_deviance - residual_deviance
+print(paste("Null Deviance:", null_deviance))
+print(paste("Residual Deviance:", residual_deviance))
+print(paste("Deviance Reduction:", deviance_reduction))
+
+# Assumptions Checking (Diagnostic Plots)
+par(mfrow = c(2, 2))  # Set up a 2x2 plot layout
+plot(logistic_model)
+
+# Plot residuals
+plot(resid(logistic_model), ylab = "Residuals")
+
+#4. Prediction
+# Predicting probabilities
+predicted_probs <- predict(logistic_model, type = "response")
+
+#5, Model Accuracy
+# Create a confusion matrix
+predicted_classes <- ifelse(predicted_probs > 0.5, "High", "Low")
+conf_matrix <- table(predicted_classes, combined_data$Feelings_Category)
+
+# Calculate accuracy
+accuracy <- sum(diag(conf_matrix)) / sum(conf_matrix)
+print(accuracy)
+
+# Load required library
+library(pROC)
+
+# Calculate ROC curve
+roc_curve <- roc(combined_data$Feelings_Category, predicted_probs)
+
+# Plot ROC curve
+plot(roc_curve, main = "ROC Curve", col = "blue")
+
+# Add diagonal reference line
+abline(a = 0, b = 1, lty = 2, col = "red")
+
+# Add AUC to the plot
+auc_value <- auc(roc_curve)
+text(0.8, 0.2, paste("AUC =", round(auc_value, 2)), col = "black")
+
+```
+1. A one-unit increase in "Instagram_Time" is associated with a 0.14075 increase in the log odds of the feelings category, holding other variables constant.
+
+In this output, "Linkedin_Time" has a p-value of 0.0909, indicating it is marginally significant at the 0.1 significance level.
+
+A significant reduction in deviance indicates that the predictors improve the model's fit.
+The AIC value provides a measure of the model's goodness of fit, with lower values indicating a better fit.
+
+2. p-values:
+Most predictor variables have p-values > 0.05, indicating they are not statistically significant.
+"Linkedin_Time" has a p-value < 0.1, suggesting potential significance.
+Other variables may require further investigation or elimination.
+
+AIC and BIC:
+AIC: 35.93, indicating reasonable fit and parsimony.
+BIC: 45.33, with lower values preferred.
+
+Deviance:
+Reduction in deviance from null to residual: 9.98, indicating substantial explained variation.
+```{r}
+#improved accuracy
+
+# Load required library
+library(glmnet)
+
+# Prepare the data
+X <- as.matrix(combined_data[, -9]) # Independent variables
+Y <- as.factor(combined_data$Feelings_Category) # Dependent variable
+
+# Perform cross-validation to tune lambda (regularization parameter)
+cv_model <- cv.glmnet(X, Y, family = "binomial", alpha = 0)
+
+# Get the best lambda
+best_lambda <- cv_model$lambda.min
+
+# Fit the final model with the best lambda
+final_model <- glmnet(X, Y, family = "binomial", alpha = 0)
+best_model <- glmnet(X, Y, family = "binomial", alpha = 0, lambda = best_lambda)
+
+# Cross-validation accuracy
+cv_accuracy <- 1 - cv_model$cvm[length(cv_model$cvm)] # Extract the accuracy from the last fold
+
+# Predicting probabilities
+predicted_probs <- predict(best_model, newx = X, type = "response")
+
+# Model Accuracy
+# Create a confusion matrix
+predicted_classes <- ifelse(predicted_probs > 0.5, "High", "Low")
+conf_matrix <- table(predicted_classes, Y)
+
+# Calculate accuracy
+accuracy <- sum(diag(conf_matrix)) / sum(conf_matrix)
+
+# Print accuracy
+print(accuracy)
+
+# Previous accuracy
+previous_accuracy <- 0.1904762
+
+# New accuracy
+new_accuracy <- accuracy
+
+# Create a bar plot
+barplot(c(previous_accuracy, new_accuracy), 
+        names.arg = c("Previous", "New"), 
+        ylim = c(0, 1), 
+        col = c("red", "blue"),
+        main = "Comparison of Model Accuracies",
+        ylab = "Accuracy")
+
+# Add text labels
+text(1, previous_accuracy + 0.05, round(previous_accuracy, 2), pos = 3, col = "red")
+text(2, new_accuracy + 0.05, round(new_accuracy, 2), pos = 3, col = "blue")
+
+```

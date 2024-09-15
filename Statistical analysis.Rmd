@@ -1,0 +1,220 @@
+---
+title: "Assignment8_SocialMedia"
+author: "Akshita"
+date: "2024-04-13"
+output: html_document
+---
+
+```{r}
+social_media <- read.csv("C:/Users/HP/Downloads/Social_media_original.csv")
+str(social_media)
+social_media_cleaned <- social_media[,-1]
+
+#changing column names
+change_cols_index <- c(2,4,6,8,10,12,14,16,17,18,19,20,21,22,23,24)
+change_cols_name <- c("Instagram_Time", "Linkedin_Time", "Snapchat_Time", "Twitter_Time", "Whatsapp_Time", "Youtube_Time", "OTT_Time", "Reddit_Time", "Application Type", "Interview_call_received", "Networking", "Learning", "Mood_Productivity", "Morning_tireness", "Sleep_trouble", "Weekly_Feelings")
+colnames(social_media_cleaned)[change_cols_index] <- change_cols_name
+
+
+# Convert "NA", "N/A", "n/a", "na", "N.A", "n.a" to 0
+social_media_cleaned[social_media_cleaned == "NA" | social_media_cleaned == "N/A" | social_media_cleaned == "na" | social_media_cleaned == "n/a" | social_media_cleaned == "N.A" | social_media_cleaned == "n.a" | social_media_cleaned == "0" | social_media_cleaned == ""] <- NA
+social_media_cleaned[is.na(social_media_cleaned)] <- 0
+
+# Define a function to convert time strings to decimal hours
+convert_to_decimal_hours <- function(time_string) {
+# Check if NA values are present
+if (any(is.na(time_string))) {
+         return(rep(NA, length(time_string)))  # Return NA for NA values
+     }
+     
+# Define a function to convert HH:MM format to decimal hours
+     hhmm_to_decimal <- function(hhmm) {
+         parts <- as.numeric(strsplit(hhmm, ":")[[1]])  # Split into hours and minutes
+         hours <- parts[1]
+         minutes <- ifelse(length(parts) > 1, parts[2], 0)  # Handle missing minutes
+         total_hours <- hours + minutes / 60
+         return(total_hours)
+     }
+     
+# Convert time strings to decimal hours
+decimal_hours <- sapply(time_string, function(x) {
+         if (grepl("^\\d+:\\d+$", x)) {
+             return(hhmm_to_decimal(x))  # Convert HH:MM format
+         } else if (grepl("^\\d+\\.\\d+$", x)) {
+             return(as.numeric(x))  # Convert decimal format
+         } else if (grepl("^\\d+$", x)) {
+             return(as.numeric(x))  # Convert whole numbers
+         } else {
+             return(NA)  # Return NA for other cases
+         }
+     })
+     
+     return(decimal_hours)
+}
+
+time_columns <- c("Instagram_Time", "Linkedin_Time", "Snapchat_Time", "Twitter_Time", "Whatsapp_Time", "Youtube_Time", "OTT_Time", "Reddit_Time") 
+# Apply the conversion function to all time columns
+social_media_cleaned[time_columns] <- lapply(social_media_cleaned[time_columns], convert_to_decimal_hours)
+ 
+# Verify the result
+str(social_media_cleaned)
+
+#Treating NA in whatsapp column
+mean_value <- mean(social_media_cleaned$Whatsapp_Time, na.rm = TRUE)
+social_media_cleaned$Whatsapp_Time[is.na(social_media_cleaned$Whatsapp_Time)] <- mean_value
+
+# Convert 'No' and 'Yes' to 0 and 1 
+social_media_cleaned$Mood_Productivity <- ifelse(social_media_cleaned$Mood_Productivity == "No", 0, 1)
+
+social_media_cleaned$Morning_tireness <- ifelse(social_media_cleaned$Morning_tireness == "No", 0, 1)
+
+social_media_cleaned$Sleep_trouble <- ifelse(social_media_cleaned$Sleep_trouble == "No", 0, 1)
+
+# Select the relevant columns
+time_columns <- social_media_cleaned[, grepl("_Time", colnames(social_media_cleaned))]
+other_columns <- social_media_cleaned[c("Weekly_Feelings")]
+ 
+# Combine the columns
+combined_data <- cbind(time_columns, other_columns)
+# Compute the correlation matrix
+correlation_matrix <- cor(combined_data)
+# Print the correlation matrix
+print(correlation_matrix)
+```
+1. Model Development
+```{r}
+sm_model_fit <- lm(Weekly_Feelings ~ Linkedin_Time + Snapchat_Time + Twitter_Time + Whatsapp_Time + Youtube_Time + OTT_Time + Reddit_Time, data = combined_data)
+#show the results
+summary(sm_model_fit)
+#Summary has three sections. Section1: How well does the model fit the data (before Coefficients). Section2: Is the hypothesis supported? (until sifnif codes). Section3: How well does data fit the model (again).
+# Useful Helper Functions
+coefficients(sm_model_fit)
+```
+The intercept coefficient is 2.918, indicating the estimated weekly feelings when the time spent on all social media platforms is zero. However, this interpretation might not be practically meaningful given that spending zero time on all platforms is unlikely.
+
+Linkedin_Time: The coefficient for Linkedin_Time is 0.165. It suggests that for each unit increase in time spent on LinkedIn, weekly feelings increase by approximately 0.165 units, although the p-value is marginally above the conventional significance level of 0.05 (p = 0.058).
+
+Snapchat_Time: The coefficient for Snapchat_Time is -0.190. It suggests that for each unit increase in time spent on Snapchat, weekly feelings decrease by approximately 0.190 units, though this effect is not statistically significant at the 0.05 level (p = 0.168).
+
+Twitter_Time, Whatsapp_Time, Youtube_Time, OTT_Time, Reddit_Time: None of these coefficients are statistically significant, as their p-values are all greater than 0.05.
+
+```{r}
+# Plot scatterplots with regression lines for each predictor variable
+par(mfrow = c(3, 3))  # Arrange plots in a 3x3 grid
+
+# Loop through each predictor variable
+predictor_vars <- c("Linkedin_Time", "Snapchat_Time", "Twitter_Time", "Whatsapp_Time", "Youtube_Time", "OTT_Time", "Reddit_Time")
+for (predictor in predictor_vars) {
+  plot(Weekly_Feelings ~ get(predictor), data = combined_data, 
+       main = paste("Regression Line for Weekly Feelings and", predictor))
+  abline(lm(Weekly_Feelings ~ get(predictor), data = combined_data), col = "blue")
+}
+
+# Reset plotting parameters
+par(mfrow = c(1, 1))
+
+# Diagnostic plots for the linear regression model
+plot(sm_model_fit)
+```
+
+2. Model Acceptance
+```{r}
+# Assess the acceptance of the model
+# Check R-squared and adjusted R-squared
+r_squared <- summary(sm_model_fit)$r.squared
+adj_r_squared <- summary(sm_model_fit)$adj.r.squared
+cat("R-squared:", r_squared, "\n")
+cat("Adjusted R-squared:", adj_r_squared, "\n")
+
+# Check the F-statistic and its p-value
+f_statistic <- summary(sm_model_fit)$fstatistic
+f_statistic_value <- f_statistic[1]
+f_statistic_p_value <- pf(f_statistic_value, f_statistic[2], f_statistic[3], lower.tail = FALSE)
+cat("F-statistic:", f_statistic_value, "\n")
+cat("p-value:", f_statistic_p_value, "\n")
+```
+The R-squared value is 0.3558148, indicating that approximately 35.58% of the variance in weekly feelings is explained by the predictor variables included in the model.
+The adjusted R-squared value is 0.008945826, which is very close to zero. This suggests that the model's explanatory power is not significantly improved by the inclusion of the predictor variables.
+
+The F-statistic is 1.02579, indicating how well the model fits the data.
+The associated p-value (0.458319) is greater than the conventional significance level of 0.05.
+A high p-value suggests that the model as a whole is not statistically significant.
+
+The adjusted R-squared value being close to zero and the low F-statistic with a high p-value indicate that the model does not provide a good fit to the data.
+
+The lack of significance in the F-test suggests that the predictor variables, as a group, do not significantly contribute to explaining the variance in weekly feelings.
+
+Therefore, the model may not be suitable for acceptance as a reliable predictor of weekly feelings based on the time spent on social media platforms alone.
+
+
+3. Residual Analysis
+```{r}
+# Plot pairs
+pairs(combined_data, main = "Combined Data")
+confint(sm_model_fit,level=0.95)
+fitted(sm_model_fit)
+residuals(sm_model_fit)
+
+# Plot residuals vs. fitted values
+plot(sm_model_fit, which = 1)
+
+# Plot normal Q-Q plot of residuals
+plot(sm_model_fit, which = 2)
+```
+The values are in a curve which means they are not normally distributed.
+
+The curved points may indicate that the residuals or the data itself are not normally distributed.
+
+Curved points may also suggest unequal variance (heteroscedasticity) in the residuals, where the spread of the residuals varies across different levels of the predictor variables.
+
+In some cases, curved points may suggest nonlinearity in the relationship between the predictors and the response variable. This indicates that the linear regression model may not adequately capture the true relationship.
+
+
+4. Prediction
+```{r}
+# Make predictions
+predictions <- predict(sm_model_fit, newdata = combined_data)
+
+# Print predictions
+print(predictions)
+```
+The model has generated predictions for weekly feelings for each observation in the dataset.
+
+Each prediction represents the model's estimate of the weekly feelings for a particular individual based on their time spent on various social media platforms.
+
+These predictions can be used to gain insights into how the time spent on different social media platforms may influence individuals' weekly feelings.
+
+
+5. Model Accuracy
+```{r}
+# Calculate Mean Squared Error (MSE)
+mse <- mean(sm_model_fit$residuals^2)
+
+# Calculate Root Mean Squared Error (RMSE)
+rmse <- sqrt(mse)
+
+# Calculate Mean Absolute Error (MAE)
+mae <- mean(abs(sm_model_fit$residuals))
+
+# Print the accuracy metrics
+cat("Mean Squared Error (MSE):", mse, "\n")
+cat("Root Mean Squared Error (RMSE):", rmse, "\n")
+cat("Mean Absolute Error (MAE):", mae, "\n")
+```
+The calculated MSE, RMSE, and MAE values provide insights into the model's predictive accuracy.
+
+With MSE of 0.3418126, RMSE of 0.5846474, and MAE of 0.4719304, the model's performance appears to be moderate.
+
+These values suggest that, on average, the model's predictions are off by approximately 0.58 units of weekly feelings when considering RMSE, and approximately 0.47 units when considering MAE.
+```{r}
+#Anova Table
+anova(sm_model_fit)
+vcov(sm_model_fit)
+cov2cor(vcov(sm_model_fit))
+temp <- influence.measures(sm_model_fit)
+temp
+plot(sm_model_fit)
+
+anova_result <- anova(sm_model_fit)
+print(anova_result)
+```

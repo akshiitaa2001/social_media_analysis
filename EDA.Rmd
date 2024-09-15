@@ -1,0 +1,506 @@
+---
+title: "Assignment_MA"
+author: "Akshita"
+date: "2024-03-28"
+output: html_document
+---
+
+```{r}
+
+social_media <- read.csv("C:/Users/HP/Downloads/Social_media_original.csv")
+str(social_media)
+social_media_cleaned <- social_media[,-1]
+
+#changing column names
+change_cols_index <- c(2,4,6,8,10,12,14,16,17,18,19,20,21,22,23,24)
+change_cols_name <- c("Instagram_Time", "Linkedin_Time", "Snapchat_Time", "Twitter_Time", "Whatsapp_Time", "Youtube_Time", "OTT_Time", "Reddit_Time", "Application Type", "Interview_call_received", "Networking", "Learning", "Mood_Productivity", "Morning_tireness", "Sleep_trouble", "Weekly_Feelings")
+colnames(social_media_cleaned)[change_cols_index] <- change_cols_name
+
+
+# Convert "NA", "N/A", "n/a", "na", "N.A", "n.a" to 0
+social_media_cleaned[social_media_cleaned == "NA" | social_media_cleaned == "N/A" | social_media_cleaned == "na" | social_media_cleaned == "n/a" | social_media_cleaned == "N.A" | social_media_cleaned == "n.a" | social_media_cleaned == "0" | social_media_cleaned == ""] <- NA
+social_media_cleaned[is.na(social_media_cleaned)] <- 0
+
+# Define a function to convert time strings to decimal hours
+convert_to_decimal_hours <- function(time_string) {
+# Check if NA values are present
+if (any(is.na(time_string))) {
+         return(rep(NA, length(time_string)))  # Return NA for NA values
+     }
+     
+# Define a function to convert HH:MM format to decimal hours
+     hhmm_to_decimal <- function(hhmm) {
+         parts <- as.numeric(strsplit(hhmm, ":")[[1]])  # Split into hours and minutes
+         hours <- parts[1]
+         minutes <- ifelse(length(parts) > 1, parts[2], 0)  # Handle missing minutes
+         total_hours <- hours + minutes / 60
+         return(total_hours)
+     }
+     
+# Convert time strings to decimal hours
+decimal_hours <- sapply(time_string, function(x) {
+         if (grepl("^\\d+:\\d+$", x)) {
+             return(hhmm_to_decimal(x))  # Convert HH:MM format
+         } else if (grepl("^\\d+\\.\\d+$", x)) {
+             return(as.numeric(x))  # Convert decimal format
+         } else if (grepl("^\\d+$", x)) {
+             return(as.numeric(x))  # Convert whole numbers
+         } else {
+             return(NA)  # Return NA for other cases
+         }
+     })
+     
+     return(decimal_hours)
+}
+
+time_columns <- c("Instagram_Time", "Linkedin_Time", "Snapchat_Time", "Twitter_Time", "Whatsapp_Time", "Youtube_Time", "OTT_Time", "Reddit_Time") 
+# Apply the conversion function to all time columns
+social_media_cleaned[time_columns] <- lapply(social_media_cleaned[time_columns], convert_to_decimal_hours)
+ 
+# Verify the result
+str(social_media_cleaned)
+
+#Dropping the name columns
+social_media_cleaned <- social_media_cleaned[, -c(1, 3, 5, 7, 9, 11, 13, 15)] 
+
+#Treating NA in whatsapp column
+mean_value <- mean(social_media_cleaned$Whatsapp_Time, na.rm = TRUE)
+social_media_cleaned$Whatsapp_Time[is.na(social_media_cleaned$Whatsapp_Time)] <- mean_value
+
+#Scaling the data
+# Extracting the columns with names ending in "_Time"
+time_columns <- grep("_Time$", names(social_media_cleaned), value = TRUE)
+
+# Scaling the time columns
+scaled_time_data <- scale(social_media_cleaned[time_columns])
+
+#plotting the scaled values
+x_time_columns <- grep("_Time$", names(social_media_cleaned), value = TRUE)
+
+# Plot histograms for each x_time column
+par(mfrow = c(2, 3))  # Adjust the layout based on the number of x_time columns
+for (col in x_time_columns) {
+    hist(scaled_time_data, main = col, xlab = "Scaled Value")
+}
+
+```
+
+```{r}
+#distance of my social media usage and class average
+# Calculate the Mahalanobis distance manually
+my_usage <- as.matrix(scaled_time_data[12, ])
+class_mean <- colMeans(scaled_time_data)
+class_cov <- cov(scaled_time_data)
+diff <- my_usage - class_mean
+maha_dist <- sqrt(t(diff) %*% solve(class_cov) %*% diff)
+
+# Print the Mahalanobis distance
+print(maha_dist)
+```
+
+
+```{r}
+
+#PCA
+
+dataset <- prcomp(dataset[c(-1,-11)],scale=TRUE)
+head(ProCon_pca)
+
+summary(ProCon_pca)
+
+plot(ProCon_pca)
+
+# Compute the covariance matrix
+cov_matrix <- cov(scaled_time_data)
+
+# Perform eigenvalue decomposition
+eigen_result <- eigen(cov_matrix)
+
+# Extract eigenvalues and eigenvectors
+eigenvalues <- eigen_result$values
+eigenvectors <- eigen_result$vectors
+
+#To find number of principal components to consider:
+#1 Eigenvalue criterion
+eigenvalues <- eigen_result$values
+num_components <- sum(eigenvalues > 1)
+print(num_components)
+
+#2 Scree plot
+plot(eigenvalues, type = "b", main = "Scree Plot")
+abline(h = 1, col = "red", lty = 2)
+
+#Retaining 3 PC
+n_components <- 3  
+transformed_data <- scaled_time_data %*% eigenvectors[, 1:n_components]
+print(transformed_data)
+```
+PC1: This component captures the most significant variation in the data. Observations with higher values in PC1 are likely to have higher overall activity across different social media platforms.
+
+PC2: This component represents additional variation orthogonal to PC1. Observations with higher values in PC2 but lower values in PC1 may have a unique combination of social media usage patterns compared to those with higher PC1 values.
+
+PC3: Similar to PC2, PC3 captures additional variation orthogonal to PC1 and PC2. Observations with higher values in PC3 but lower values in PC1 and PC2 may exhibit yet another unique combination of social media usage patterns.
+
+```{r}
+library(RColorBrewer)
+loadings <- eigenvectors[, 1:n_components]
+my_palette <- colorRampPalette(brewer.pal(9, "YlOrRd")) 
+# Visualize the loadings matrix with the specified color palette
+heatmap(loadings, Rowv = NA, Colv = NA, col = my_palette(256), scale = "column", margins = c(5, 10))
+
+# Scatter plot of the first two principal components
+plot(transformed_data[, 1], transformed_data[, 2], xlab = "PC1", ylab = "PC2", 
+     main = "Scatter Plot of PC1 vs PC2")
+
+biplot(prcomp(scaled_time_data), scale = 0)
+
+# Cumulative Variance Plot
+cumulative_variance <- cumsum(eigenvalues) / sum(eigenvalues)
+plot(1:length(cumulative_variance), cumulative_variance, type = "b", 
+     xlab = "Number of Principal Components", ylab = "Cumulative Variance Explained",
+     main = "Cumulative Variance Plot")
+
+# 3D Scatter Plot
+library(scatterplot3d)
+scatterplot3d(transformed_data[, 1], transformed_data[, 2], transformed_data[, 3],
+              xlab = "PC1", ylab = "PC2", zlab = "PC3",
+              main = "3D Scatter Plot of PC1, PC2, and PC3")
+
+# Heatmap of Correlation Matrix
+corr_matrix <- cor(scaled_time_data)
+heatmap(corr_matrix, Rowv = NA, Colv = NA, col = heat.colors(256))
+```
+
+```{r}
+#Cluster Analysis
+
+# Define the maximum number of clusters to test
+max_k <- 10
+
+# Perform K-means clustering for different values of k
+wcss <- numeric(length = max_k)
+for (i in 1:max_k) {
+  kmeans_model <- kmeans(scaled_time_data, centers = i)
+  wcss[i] <- kmeans_model$tot.withinss
+}
+
+# Plot the elbow method
+plot(1:max_k, wcss, type = "b", xlab = "Number of clusters (k)", ylab = "Within-cluster sum of squares (WCSS)")
+
+# Step 1: Choose the number of clusters (K)
+K <- 6 
+# Step 2: Perform K-means clustering
+kmeans_result <- kmeans(scaled_time_data, centers = K)
+# Step 3: View cluster centers
+print(kmeans_result$centers)
+# Step 4: View cluster assignments for each data point
+print(kmeans_result$cluster)
+
+# Computing the percentage of variation accounted for. Two clusters
+(kmeans2.sm <- kmeans(scaled_time_data,2,nstart = 10))
+perc.var.2 <- round(100*(1 - kmeans2.sm$betweenss/kmeans2.sm$totss),1)
+names(perc.var.2) <- "Perc. 2 clus"
+perc.var.2
+
+# Computing the percentage of variation accounted for. Three clusters
+(kmeans3.sm <- kmeans(scaled_time_data,3,nstart = 10))
+perc.var.3 <- round(100*(1 - kmeans3.sm$betweenss/kmeans2.sm$totss),1)
+names(perc.var.3) <- "Perc. 3 clus"
+perc.var.3
+
+# Computing the percentage of variation accounted for. Four clusters
+(kmeans4.sm <- kmeans(scaled_time_data,4,nstart = 10))
+perc.var.4 <- round(100*(1 - kmeans4.sm$betweenss/kmeans4.sm$totss),1)
+names(perc.var.4) <- "Perc. 4 clus"
+perc.var.4
+
+# Computing the percentage of variation accounted for. Five clusters
+(kmeans5.sm <- kmeans(scaled_time_data,5,nstart = 10))
+perc.var.5 <- round(100*(1 - kmeans5.sm$betweenss/kmeans5.sm$totss),1)
+names(perc.var.5) <- "Perc. 5 clus"
+perc.var.5
+
+# Computing the percentage of variation accounted for. Six clusters
+(kmeans6.sm <- kmeans(scaled_time_data,6,nstart = 10))
+perc.var.6 <- round(100*(1 - kmeans6.sm$betweenss/kmeans6.sm$totss),1)
+names(perc.var.6) <- "Perc. 6 clus"
+perc.var.6
+
+attributes(perc.var.6)
+Variance_List <- c(perc.var.2,perc.var.3,perc.var.4,perc.var.5,perc.var.6)
+
+Variance_List
+plot(Variance_List)
+
+#elbow method
+# Perform K-means clustering for different numbers of clusters
+wss <- numeric(length = 5)
+
+for (k in 2:6) {
+  kmeans_model <- kmeans(scaled_time_data, k, nstart = 10)
+  wss[k - 1] <- kmeans_model$tot.withinss
+}
+
+#elbow curve
+plot(2:6, wss, type = "b", xlab = "Number of Clusters", ylab = "Within-cluster Sum of Squares", main = "Elbow Method")
+
+#silhouette method
+
+library(cluster)
+
+sil_width <- numeric(length = 5)
+
+# Computing silhouette widths for different numbers of clusters
+for (k in 2:6) {
+  # Perform K-means clustering
+  kmeans_model <- kmeans(scaled_time_data, k, nstart = 10)
+  
+  if (k > 1) {  # Silhouette width using two clusters
+    silhouette_width <- silhouette(kmeans_model$cluster, dist(scaled_time_data))
+    sil_width[k - 1] <- mean(silhouette_width[, "sil_width"])
+  }
+}
+
+# Plot the silhouette scores
+plot(2:6, sil_width, type = "b")
+
+#2. Show the membership for each cluster
+optimal_num_clusters <- 5
+
+#K-means clustering with the optimal number of clusters
+kmeans_model <- kmeans(scaled_time_data, optimal_num_clusters, nstart = 10)
+
+cluster_membership <- kmeans_model$cluster
+
+# Print the cluster membership for each data point
+print(cluster_membership)
+
+# Scatter plot of the data with clusters colored by membership
+plot(scaled_time_data[, 1], scaled_time_data[, 2], 
+     col = kmeans_model$cluster, pch = 16, 
+     xlab = "Variable 1", ylab = "Variable 2",
+     main = "K-means Clustering")
+
+# Adding cluster centers to the plot
+points(kmeans_model$centers[, 1], kmeans_model$centers[, 2], col = 1:optimal_num_clusters, pch = 3, cex = 2)
+
+# Adding legend
+legend("topright", legend = paste("Cluster", 1:optimal_num_clusters), col = 1:optimal_num_clusters, pch = 16, cex = 1.2, title = "Clusters")
+
+#3. Show a visualization of the cluster and membership using the first two Principal Components.
+
+# Perform PCA
+pca_result <- prcomp(scaled_time_data, scale. = TRUE)
+
+# Extract PC scores for the first three principal components
+PC1 <- pca_result$x[, 1]
+PC2 <- pca_result$x[, 2]
+PC3 <- pca_result$x[, 3]
+
+# Plot the data with clusters colored by membership
+plot(PC1, PC2, 
+     col = kmeans_model$cluster, pch = 16, 
+     xlab = "Principal Component 1", ylab = "Principal Component 2",
+     main = "K-means Clustering based on PC1 and PC2")
+
+# Add legend
+legend("topright", legend = paste("Cluster", 1:optimal_num_clusters), 
+       col = 1:optimal_num_clusters, pch = 16, cex = 1.2, title = "Clusters")
+
+# Saving five k-means clusters in a list
+# Initialize a list to store matrices for each cluster
+cluster_matrices <- list()
+ 
+# Iterate over each cluster
+for (i in 1:max(kmeans5.sm$cluster)) {
+     # Subset data for the current cluster
+     cluster_indices <- which(kmeans5.sm$cluster == i)
+     cluster_data <- scaled_time_data[cluster_indices, ]
+     
+     # Store the cluster data in the list
+     cluster_matrices[[paste0("clus", i)]] <- cluster_data
+ }
+ 
+# Check the list of matrices
+print(cluster_matrices)
+```
+
+Clus1: This cluster represent individuals who are highly active on platforms like Twitter and OTT services, as indicated by the high positive values for Twitter_Time and OTT_Time.
+
+Clus2: Individuals in this cluster seem to have varied usage patterns across different platforms. Some are highly active on Linkedin, while others are more active on Instagram. There isn't a clear dominant pattern.
+
+Clus3: This cluster suggests individuals who are highly active on platforms like Instagram, Snapchat, and Youtube, as indicated by the high positive values for these variables.
+
+Clus4: This cluster appears to represent individuals with a mix of activity across various platforms. Some individuals are highly active on Whatsapp, while others are active on platforms like Instagram and Youtube.
+
+Clus5: Individuals in this cluster seem to have low to moderate activity across all platforms, with no clear dominant pattern.
+
+```{r}
+#Factor Analysis
+library(psych)
+
+fit.pc_sm <- principal(scaled_time_data, nfactors=4, rotate="varimax")
+fit.pc_sm
+
+# Extract eigenvalues
+eigenvalues <- fit.pc_sm$values
+# Create scree plot
+plot(1:length(eigenvalues), eigenvalues, type="b", 
+      xlab="Component Number", ylab="Eigenvalues", main="Scree Plot")
+# Add a horizontal line at y = 1 for reference (Kaiser's criterion)
+abline(h=1, col="red", lty=2)
+# Add text label for Kaiser's criterion
+text(length(eigenvalues), 1, "Kaiser's Criterion (Eigenvalue = 1)", pos=4, col="red")
+
+round(fit.pc_sm$values, 3)
+fit.pc_sm$loadings
+
+# Loadings with more digits
+for (i in c(1,2,3,4)) { print(fit.pc_sm$loadings[[1,i]])}
+# Communalities
+fit.pc_sm$communality
+# Rotated factor scores, Notice the columns ordering: RC1, RC3, RC2 and RC4
+fit.pc_sm$scores
+
+#FA model
+fa.plot(fit.pc_sm)
+fa.diagram(fit.pc_sm)
+vss(scaled_time_data)
+
+# Computing Correlation Matrix
+corrm.sm <- cor(scaled_time_data)
+corrm.sm
+plot(corrm.sm)
+
+sm_pca <- prcomp(scaled_time_data, scale=TRUE)
+summary(sm_pca)
+plot(sm_pca)
+
+# A table containing eigenvalues and %'s accounted, follows. Eigenvalues are the sdev^2
+(eigen_sm <- round(sm_pca$sdev^2,3))
+round(fit.pc_sm$values, 3)
+names(eigen_sm) <- paste("PC",1:8,sep="")
+eigen_sm
+
+sumlambdas <- sum(eigen_sm)
+sumlambdas
+
+propvar <- round(eigen_sm/sumlambdas,2)
+propvar
+
+cumvar_sm <- cumsum(propvar)
+cumvar_sm
+
+matlambdas <- rbind(eigen_sm,propvar,cumvar_sm)
+matlambdas
+
+rownames(matlambdas) <- c("Eigenvalues","Prop. variance","Cum. prop. variance")
+rownames(matlambdas)
+
+eigvec.sm <- sm_pca$rotation
+print(sm_pca)
+
+# Taking the first two PCs to generate linear combinations for all the variables with two factors
+pcafactors.sm <- eigvec.sm[,1:2]
+pcafactors.sm
+
+# Multiplying each column of the eigenvector’s matrix by the square-root of the corresponding eigenvalue in order to get the factor loadings
+unrot.fact.sm <- sweep(pcafactors.sm,MARGIN=2,sm_pca$sdev[1:2],`*`)
+unrot.fact.sm
+
+# Computing communalities
+communalities.sm <- rowSums(unrot.fact.sm^2)
+communalities.sm
+
+# Performing the varimax rotation. The default in the varimax function is norm=TRUE thus, Kaiser normalization is carried out
+rot.fact.sm <- varimax(unrot.fact.sm)
+#View(unrot.fact.fish)
+rot.fact.sm
+
+# The print method of varimax omits loadings less than abs(0.1). In order to display all the loadings, it is necessary to ask explicitly the contents of the object $loadings
+fact.load.sm <- rot.fact.sm$loadings[1:8,1:2]
+fact.load.sm
+
+as.matrix(scaled_time_data)%*%fact.load.sm%*%solve(t(fact.load.sm)%*%fact.load.sm)
+
+# Show the columns (variables) that go into each factor
+for (i in 1:ncol(fact.load.sm)) {
+  cat("Variables for Factor PC", i, ":\n")
+  print(rownames(fact.load.sm)[order(abs(fact.load.sm[, i]), decreasing = TRUE)])
+  cat("\n")
+}
+
+
+# Convert factor loadings matrix to a data frame
+fact_loadings_df <- as.data.frame(fact.load.sm)
+# Add a column for variable names
+fact_loadings_df$Variable <- rownames(fact_loadings_df)
+# Reshape data for plotting
+fact_loadings_df_long <- reshape2::melt(fact_loadings_df, id.vars = "Variable", variable.name = "Factor")
+
+library(ggplot2)
+#HeatMap
+ggplot(fact_loadings_df_long, aes(x = Factor, y = Variable, fill = value)) +
+     geom_tile() +
+     scale_fill_gradient2(low = "blue", mid = "white", high = "red", midpoint = 0) +
+     labs(x = "Factor", y = "Variable", title = "Factor Loadings Heatmap") +
+     theme_minimal() +
+     theme(axis.text.x = element_text(angle = 45, hjust = 1))
+
+#BarPlot
+ggplot(fact_loadings_df_long, aes(x = Factor, y = value, fill = Variable)) +
+     geom_bar(stat = "identity", position = "dodge") +
+     labs(x = "Factor", y = "Factor Loading", fill = "Variable", title = "Factor Loadings Bar Plot") + theme_minimal() + theme(axis.text.x = element_text(angle = 45, hjust = 1),
+           legend.position = "right")
+
+```
+
+```{r}
+# Extract your usage data (row 12) from scaled_time_data
+# Extract factor loadings for your observation and the class
+# Extract your usage data (row 12) from scaled_time_data
+my_data <- as.data.frame(scaled_time_data[12, ])
+fa_result_class <- fa(scaled_time_data, nfactors = 3, rotate = "varimax")
+my_loadings <- fa_result_class$loadings[nrow(my_data), ]
+class_loadings <- fa_result_class$loadings[-nrow(my_data), ]
+print(my_loadings)
+print(class_loadings)
+```
+
+Factor 1:
+The class spends a lot of time on social media platforms like Instagram, Snapchat, and Whatsapp, as shown by Factor 1. Compared to the class average on these platforms, my data shows you I them less, although the association is weak.
+
+Factor 2:
+For my observation, loadings are 0.2668, indicating a moderate positive association with this factor.
+For the class, loadings vary across variables, with higher loadings for Twitter_Time and OTT_Time.
+Inference: Both my observation and the class show positive associations with Factor 2, but the specific platforms driving this association may differ slightly.
+
+Factor3:
+My data shows a very weak positive association with Factor 3 (0.0364).
+Factor 3 for the class is also driven by high usage, but mainly focused on Youtube compared to other platforms.
+Overall, both mine and the class seem to have high Youtube usage reflected in Factor 3, with less influence from other platforms.
+
+Q. Provide a takeaway from the analysis.
+
+Factor Analysis Insights:
+
+The factor loadings indicate the correlation between each social media platform and the underlying factors. Higher absolute loadings suggest a stronger association between the platform and the factor.
+Factors with loadings above a certain threshold (e.g., 0.3 or 0.4) may be considered significant contributors to the respective factors.
+
+PCA Insights:
+
+PCA identifies patterns and relationships among the social media platforms, compressing the information into principal components.
+
+Each principal component captures a proportion of the total variance in the data, with higher proportions indicating greater importance in explaining the variability.
+
+The transformed data represents the original data projected onto the principal components, allowing for dimensionality reduction while retaining most of the variance.
+
+Comparison with the Class:
+
+Comparing individual factor loadings or principal component scores with those of the class can reveal similarities or differences in social media usage patterns.
+Similar patterns across factors/components may suggest common trends or preferences within the class, while differences could indicate unique behaviors or preferences.
+
+Interpretation of Clustering Results:
+
+Clustering results provide insights into how individuals or groups of individuals (clusters) exhibit similar behaviors across different social media platforms.
+Understanding cluster characteristics can inform targeted marketing strategies, personalized recommendations, or segmentation strategies based on social media usage patterns.
